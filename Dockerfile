@@ -55,9 +55,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/server.js ./server.js
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-
+run mv package.json package.json.bak 
 # 安装 Socket.IO 相关依赖（standalone 模式不会自动包含）
 RUN pnpm add socket.io@^4.8.1 socket.io-client@^4.8.1 --prod
+run mv package.json.bak package.json
 
 # 切换到非特权用户
 USER nextjs

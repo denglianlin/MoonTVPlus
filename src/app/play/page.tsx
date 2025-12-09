@@ -161,6 +161,15 @@ function PlayPageClient() {
 
         const { version } = await versionResponse.json();
 
+        // 如果版本号为 0，说明去广告未设置，清空缓存并跳过
+        if (version === 0) {
+          console.log('去广告代码未设置（版本 0），清空缓存');
+          localStorage.removeItem('custom_ad_filter_code_cache');
+          localStorage.removeItem('custom_ad_filter_version_cache');
+          customAdFilterCodeRef.current = '';
+          return;
+        }
+
         // 如果版本号不一致或没有缓存，才获取完整代码
         if (!cachedVersion || parseInt(cachedVersion) !== version) {
           console.log('检测到去广告代码更新（版本 ' + version + '），获取最新代码');
@@ -3639,43 +3648,6 @@ function PlayPageClient() {
                           </svg>
                           <span className='hidden lg:inline max-w-0 group-hover:max-w-[100px] overflow-hidden whitespace-nowrap transition-all duration-200 ease-in-out text-white'>
                             下载
-                          </span>
-                        </button>
-
-                        {/* IDM */}
-                        <button
-                          onClick={(e) => {
-                            e.preventDefault();
-                            // 获取正确的代理 URL
-                            const tokenParam = proxyToken ? `&token=${encodeURIComponent(proxyToken)}` : '';
-                            const origin = `${window.location.protocol}//${window.location.host}`;
-                            const proxyUrl = externalPlayerAdBlock
-                              ? `${origin}/api/proxy-m3u8?url=${encodeURIComponent(videoUrl)}&source=${encodeURIComponent(currentSource)}${tokenParam}`
-                              : videoUrl;
-                            // 唤起 IDM 下载器
-                            window.open(`idm://${encodeURIComponent(proxyUrl)}`, '_blank');
-                          }}
-                          className='group relative flex items-center justify-center gap-1 w-8 h-8 lg:w-auto lg:h-auto lg:px-2 lg:py-1.5 bg-white hover:bg-gray-100 dark:bg-gray-700 dark:hover:bg-gray-600 text-xs font-medium rounded-md transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer overflow-hidden border border-gray-300 dark:border-gray-600 flex-shrink-0'
-                          title='IDM'
-                        >
-                          <svg
-                            className='w-4 h-4 flex-shrink-0'
-                            viewBox='0 0 48 48'
-                            xmlns='http://www.w3.org/2000/svg'
-                          >
-                            <path fill='#1976d2' d='M20,13c-8.837,0-16,6.044-16,13.5S11.163,40,20,40s16-6.044,16-13.5S28.837,13,20,13z M20,30 c-4.418,0-8-2.91-8-6.5s3.582-6.5,8-6.5s8,2.91,8,6.5S24.418,30,20,30z'/>
-                            <path fill='#4caf50' d='M20,13c-6.879,0-12.726,3.669-14.987,8.809C5.011,21.874,5,21.936,5,22c0,7.18,4,14,17,15 c5.472,0.421,10.355-3.997,13.463-7.083C35.801,28.823,36,27.683,36,26.5C36,19.044,28.837,13,20,13z M20,30c-4.418,0-8-2.91-8-6.5 s3.582-6.5,8-6.5s8,2.91,8,6.5S24.418,30,20,30z'/>
-                            <path fill='#ffeb3b' d='M31,33l-1.382-17.27C26.939,14.024,23.615,13,20,13c-5.319,0-10.014,2.2-12.918,5.572 C6.461,21.613,6.806,25.806,11,30C19,38,31,33,31,33z M20,17c4.418,0,8,2.91,8,6.5S24.418,30,20,30s-8-2.91-8-6.5S15.582,17,20,17z'/>
-                            <path fill='#ff1744' d='M24.563,28.835C23.268,29.568,21.697,30,20,30c-4.418,0-8-2.91-8-6.5s3.582-6.5,8-6.5 c0.043,0,0.084,0.005,0.127,0.005L19,14c0,0-12,2-9,10s15,6,15,6L24.563,28.835z'/>
-                            <circle cx='30' cy='20' r='14' fill='#29b6f6'/>
-                            <path fill='#4caf50' d='M42,24c0,0,0,2-5,1s-6,2-6,2l-1.986,6.95C29.341,33.973,29.667,34,30,34 c7.459,0,13.538-5.838,13.959-13.192C42.832,21.508,42,24,42,24z'/>
-                            <path fill='#4caf50' d='M32.208,10.347C31.719,10.487,31.302,10.698,31,11c-2,2-4,0-4,0s1.373-1.648,3.256-3.072 c0.959-0.726,0.043-2.255-1.026-1.702C28.823,6.436,28.411,6.691,28,7c-1.684,1.263-2.301,0.749-2.455-0.264 C20,8.598,16,13.827,16,20c0,0.425,0.04,0.839,0.077,1.254C17.042,21.932,18.81,22.532,22,22c6-1,4,7,4,7 s-0.196,0.458-0.503,1.135c0.612-0.375,1.239-0.832,1.884-1.4C28.332,28.507,29,27.469,29,25c0-1.716-0.52-3.043-1.127-4.008 c-0.839-1.333,0.716-2.908,2.037-2.051C29.94,18.96,29.97,18.98,30,19c3,2,1-2,1-2s-1.531-3.061,1.968-4.811 C34.048,11.65,33.368,10.014,32.208,10.347z'/>
-                            <polygon fill='#8bc34a' points='20,23 24,44 44,29'/>
-                            <polygon fill='#4caf50' points='24,44 29,34 20,23'/>
-                            <polygon fill='#33691e' points='24,44 29,34 44,29'/>
-                          </svg>
-                          <span className='hidden lg:inline max-w-0 group-hover:max-w-[100px] overflow-hidden whitespace-nowrap transition-all duration-200 ease-in-out text-gray-700 dark:text-gray-200'>
-                            IDM
                           </span>
                         </button>
 

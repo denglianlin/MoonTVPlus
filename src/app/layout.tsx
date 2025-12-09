@@ -15,6 +15,7 @@ import ChatFloatingWindow from '../components/watch-room/ChatFloatingWindow';
 import { DownloadProvider } from '../contexts/DownloadContext';
 import { DownloadBubble } from '../components/DownloadBubble';
 import { DownloadPanel } from '../components/DownloadPanel';
+import { DanmakuCacheCleanup } from '../components/DanmakuCacheCleanup';
 
 const inter = Inter({ subsets: ['latin'] });
 export const dynamic = 'force-dynamic';
@@ -128,6 +129,7 @@ export default async function RootLayout({
           <SiteProvider siteName={siteName} announcement={announcement}>
             <WatchRoomProvider>
               <DownloadProvider>
+                <DanmakuCacheCleanup />
                 {children}
                 <GlobalErrorIndicator />
                 <ChatFloatingWindow />

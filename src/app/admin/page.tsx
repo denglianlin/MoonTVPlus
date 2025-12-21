@@ -46,6 +46,7 @@ import { createPortal } from 'react-dom';
 import { AdminConfig, AdminConfigResult } from '@/lib/admin.types';
 import { getAuthInfoFromBrowserCookie } from '@/lib/auth';
 
+import CorrectDialog from '@/components/CorrectDialog';
 import DataMigration from '@/components/DataMigration';
 import PageLayout from '@/components/PageLayout';
 
@@ -2541,14 +2542,25 @@ const OpenListConfigComponent = ({
   const { isLoading, withLoading } = useLoadingState();
   const [url, setUrl] = useState('');
   const [token, setToken] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [rootPath, setRootPath] = useState('/');
   const [videos, setVideos] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [scanProgress, setScanProgress] = useState<{
+    current: number;
+    total: number;
+    currentFolder?: string;
+  } | null>(null);
+  const [correctDialogOpen, setCorrectDialogOpen] = useState(false);
+  const [selectedVideo, setSelectedVideo] = useState<any | null>(null);
 
   useEffect(() => {
     if (config?.OpenListConfig) {
       setUrl(config.OpenListConfig.URL || '');
       setToken(config.OpenListConfig.Token || '');
+      setUsername(config.OpenListConfig.Username || '');
+      setPassword(config.OpenListConfig.Password || '');
       setRootPath(config.OpenListConfig.RootPath || '/');
     }
   }, [config]);
@@ -2562,7 +2574,7 @@ const OpenListConfigComponent = ({
   const fetchVideos = async () => {
     try {
       setRefreshing(true);
-      const response = await fetch('/api/openlist/list?page=1&pageSize=100');
+      const response = await fetch('/api/openlist/list?page=1&pageSize=100&includeFailed=true');
       if (response.ok) {
         const data = await response.json();
         setVideos(data.list || []);
@@ -2584,6 +2596,8 @@ const OpenListConfigComponent = ({
             action: 'save',
             URL: url,
             Token: token,
+            Username: username,
+            Password: password,
             RootPath: rootPath,
           }),
         });
@@ -2604,6 +2618,7 @@ const OpenListConfigComponent = ({
 
   const handleRefresh = async () => {
     setRefreshing(true);
+    setScanProgress(null);
     try {
       const response = await fetch('/api/openlist/refresh', {
         method: 'POST',
@@ -2615,16 +2630,59 @@ const OpenListConfigComponent = ({
       }
 
       const result = await response.json();
-      showSuccess(
-        `刷新成功！新增 ${result.new} 个，已存在 ${result.existing} 个，失败 ${result.errors} 个`,
-        showAlert
-      );
-      await refreshConfig();
-      await fetchVideos();
+      const taskId = result.taskId;
+
+      if (!taskId) {
+        throw new Error('未获取到任务ID');
+      }
+
+      // 轮询任务进度
+      const pollInterval = setInterval(async () => {
+        try {
+          const progressResponse = await fetch(
+            `/api/openlist/scan-progress?taskId=${taskId}`
+          );
+
+          if (!progressResponse.ok) {
+            clearInterval(pollInterval);
+            throw new Error('获取进度失败');
+          }
+
+          const progressData = await progressResponse.json();
+          const task = progressData.task;
+
+          if (task.status === 'running') {
+            setScanProgress(task.progress);
+          } else if (task.status === 'completed') {
+            clearInterval(pollInterval);
+            setScanProgress(null);
+            setRefreshing(false);
+            showSuccess(
+              `扫描完成！新增 ${task.result.new} 个，已存在 ${task.result.existing} 个，失败 ${task.result.errors} 个`,
+              showAlert
+            );
+            await refreshConfig();
+            await fetchVideos();
+          } else if (task.status === 'failed') {
+            clearInterval(pollInterval);
+            setScanProgress(null);
+            setRefreshing(false);
+            throw new Error(task.error || '扫描失败');
+          }
+        } catch (error) {
+          clearInterval(pollInterval);
+          setScanProgress(null);
+          setRefreshing(false);
+          showError(
+            error instanceof Error ? error.message : '获取进度失败',
+            showAlert
+          );
+        }
+      }, 1000);
     } catch (error) {
-      showError(error instanceof Error ? error.message : '刷新失败', showAlert);
-    } finally {
+      setScanProgress(null);
       setRefreshing(false);
+      showError(error instanceof Error ? error.message : '刷新失败', showAlert);
     }
   };
 
@@ -2645,6 +2703,10 @@ const OpenListConfigComponent = ({
     } catch (error) {
       showError(error instanceof Error ? error.message : '刷新失败', showAlert);
     }
+  };
+
+  const handleCorrectSuccess = () => {
+    fetchVideos();
   };
 
   const formatDate = (timestamp?: number) => {
@@ -2680,6 +2742,36 @@ const OpenListConfigComponent = ({
             placeholder='your-token'
             className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent'
           />
+          <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+            可以直接填写Token，或使用下方账号密码登录获取
+          </p>
+        </div>
+
+        <div className='grid grid-cols-2 gap-4'>
+          <div>
+            <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+              账号（可选）
+            </label>
+            <input
+              type='text'
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder='admin'
+              className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+            />
+          </div>
+          <div>
+            <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+              密码（可选）
+            </label>
+            <input
+              type='password'
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder='password'
+              className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent'
+            />
+          </div>
         </div>
 
         <div>
@@ -2734,6 +2826,35 @@ const OpenListConfigComponent = ({
             </button>
           </div>
 
+          {refreshing && scanProgress && (
+            <div className='bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-4'>
+              <div className='flex items-center justify-between mb-2'>
+                <span className='text-sm font-medium text-blue-900 dark:text-blue-100'>
+                  扫描进度: {scanProgress.current} / {scanProgress.total}
+                </span>
+                <span className='text-sm text-blue-700 dark:text-blue-300'>
+                  {scanProgress.total > 0
+                    ? Math.round((scanProgress.current / scanProgress.total) * 100)
+                    : 0}
+                  %
+                </span>
+              </div>
+              <div className='w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2 mb-2'>
+                <div
+                  className='bg-blue-600 dark:bg-blue-500 h-2 rounded-full transition-all duration-300'
+                  style={{
+                    width: `${scanProgress.total > 0 ? (scanProgress.current / scanProgress.total) * 100 : 0}%`,
+                  }}
+                />
+              </div>
+              {scanProgress.currentFolder && (
+                <p className='text-xs text-blue-700 dark:text-blue-300'>
+                  正在处理: {scanProgress.currentFolder}
+                </p>
+              )}
+            </div>
+          )}
+
           {refreshing ? (
             <div className='text-center py-8 text-gray-500 dark:text-gray-400'>
               加载中...
@@ -2745,6 +2866,9 @@ const OpenListConfigComponent = ({
                   <tr>
                     <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
                       标题
+                    </th>
+                    <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
+                      状态
                     </th>
                     <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
                       类型
@@ -2762,26 +2886,50 @@ const OpenListConfigComponent = ({
                 </thead>
                 <tbody className='bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700'>
                   {videos.map((video) => (
-                    <tr key={video.id}>
+                    <tr key={video.id} className={video.failed ? 'bg-red-50 dark:bg-red-900/10' : ''}>
                       <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100'>
                         {video.title}
+                      </td>
+                      <td className='px-6 py-4 whitespace-nowrap text-sm'>
+                        {video.failed ? (
+                          <span className='inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200'>
+                            匹配失败
+                          </span>
+                        ) : (
+                          <span className='inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200'>
+                            正常
+                          </span>
+                        )}
                       </td>
                       <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400'>
                         {video.mediaType === 'movie' ? '电影' : '剧集'}
                       </td>
                       <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400'>
-                        {video.releaseDate.split('-')[0]}
+                        {video.releaseDate ? video.releaseDate.split('-')[0] : '-'}
                       </td>
                       <td className='px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400'>
-                        {video.voteAverage.toFixed(1)}
+                        {video.voteAverage > 0 ? video.voteAverage.toFixed(1) : '-'}
                       </td>
                       <td className='px-6 py-4 whitespace-nowrap text-right text-sm'>
-                        <button
-                          onClick={() => handleRefreshVideo(video.folder)}
-                          className={buttonStyles.primarySmall}
-                        >
-                          刷新
-                        </button>
+                        <div className='flex gap-2 justify-end'>
+                          {!video.failed && (
+                            <button
+                              onClick={() => handleRefreshVideo(video.folder)}
+                              className={buttonStyles.primarySmall}
+                            >
+                              刷新
+                            </button>
+                          )}
+                          <button
+                            onClick={() => {
+                              setSelectedVideo(video);
+                              setCorrectDialogOpen(true);
+                            }}
+                            className={video.failed ? buttonStyles.warningSmall : buttonStyles.successSmall}
+                          >
+                            {video.failed ? '立即纠错' : '纠错'}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -2805,6 +2953,17 @@ const OpenListConfigComponent = ({
         timer={alertModal.timer}
         showConfirm={alertModal.showConfirm}
       />
+
+      {/* 纠错对话框 */}
+      {selectedVideo && (
+        <CorrectDialog
+          isOpen={correctDialogOpen}
+          onClose={() => setCorrectDialogOpen(false)}
+          folder={selectedVideo.folder}
+          currentTitle={selectedVideo.title}
+          onCorrect={handleCorrectSuccess}
+        />
+      )}
     </div>
   );
 };

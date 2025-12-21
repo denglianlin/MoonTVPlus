@@ -11,6 +11,7 @@ import VideoCard from '@/components/VideoCard';
 interface Video {
   id: string;
   folder: string;
+  tmdbId: number;
   title: string;
   poster: string;
   releaseDate: string;
@@ -105,7 +106,6 @@ export default function PrivateLibraryPage() {
                   title={video.title}
                   poster={video.poster}
                   year={video.releaseDate.split('-')[0]}
-                  rating={video.voteAverage}
                   from='search'
                 />
               ))}

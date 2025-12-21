@@ -94,6 +94,8 @@ export interface AdminConfig {
   OpenListConfig?: {
     URL: string; // OpenList 服务器地址
     Token: string; // 认证 Token
+    Username?: string; // 账号（可选，用于登录获取Token）
+    Password?: string; // 密码（可选，用于登录获取Token）
     RootPath: string; // 根目录路径，默认 "/"
     LastRefreshTime?: number; // 上次刷新时间戳
     ResourceCount?: number; // 资源数量

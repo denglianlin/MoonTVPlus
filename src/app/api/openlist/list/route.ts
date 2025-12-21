@@ -15,7 +15,7 @@ import { getTMDBImageUrl } from '@/lib/tmdb.search';
 export const runtime = 'nodejs';
 
 /**
- * GET /api/openlist/list?page=1&pageSize=20
+ * GET /api/openlist/list?page=1&pageSize=20&includeFailed=false
  * 获取私人影库视频列表
  */
 export async function GET(request: NextRequest) {
@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const page = parseInt(searchParams.get('page') || '1');
     const pageSize = parseInt(searchParams.get('pageSize') || '20');
+    const includeFailed = searchParams.get('includeFailed') === 'true';
 
     const config = await getConfig();
     const openListConfig = config.OpenListConfig;
@@ -40,7 +41,12 @@ export async function GET(request: NextRequest) {
     }
 
     const rootPath = openListConfig.RootPath || '/';
-    const client = new OpenListClient(openListConfig.URL, openListConfig.Token);
+    const client = new OpenListClient(
+      openListConfig.URL,
+      openListConfig.Token,
+      openListConfig.Username,
+      openListConfig.Password
+    );
 
     // 读取 metainfo.json
     let metaInfo: MetaInfo | null = getCachedMetaInfo(rootPath);
@@ -153,19 +159,23 @@ export async function GET(request: NextRequest) {
     console.log('[OpenList List] 开始转换视频列表，视频数:', Object.keys(metaInfo.folders).length);
 
     // 转换为数组并分页
-    const allVideos = Object.entries(metaInfo.folders).map(
-      ([folderName, info]) => ({
-        id: folderName,
-        folder: folderName,
-        title: info.title,
-        poster: getTMDBImageUrl(info.poster_path),
-        releaseDate: info.release_date,
-        overview: info.overview,
-        voteAverage: info.vote_average,
-        mediaType: info.media_type,
-        lastUpdated: info.last_updated,
-      })
-    );
+    const allVideos = Object.entries(metaInfo.folders)
+      .filter(([, info]) => includeFailed || !info.failed) // 根据参数过滤失败的视频
+      .map(
+        ([folderName, info]) => ({
+          id: folderName,
+          folder: folderName,
+          tmdbId: info.tmdb_id,
+          title: info.title,
+          poster: getTMDBImageUrl(info.poster_path),
+          releaseDate: info.release_date,
+          overview: info.overview,
+          voteAverage: info.vote_average,
+          mediaType: info.media_type,
+          lastUpdated: info.last_updated,
+          failed: info.failed || false,
+        })
+      );
 
     // 按更新时间倒序排序
     allVideos.sort((a, b) => b.lastUpdated - a.lastUpdated);

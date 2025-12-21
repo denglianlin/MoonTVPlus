@@ -36,7 +36,12 @@ export async function POST(request: NextRequest) {
 
     const rootPath = openListConfig.RootPath || '/';
     const folderPath = `${rootPath}${rootPath.endsWith('/') ? '' : '/'}${folder}`;
-    const client = new OpenListClient(openListConfig.URL, openListConfig.Token);
+    const client = new OpenListClient(
+      openListConfig.URL,
+      openListConfig.Token,
+      openListConfig.Username,
+      openListConfig.Password
+    );
 
     // 删除 videoinfo.json
     const videoinfoPath = `${folderPath}/videoinfo.json`;

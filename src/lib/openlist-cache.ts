@@ -27,6 +27,7 @@ export interface MetaInfo {
       vote_average: number;
       media_type: 'movie' | 'tv';
       last_updated: number;
+      failed?: boolean; // 标记是否搜索失败
     };
   };
   last_refresh: number;

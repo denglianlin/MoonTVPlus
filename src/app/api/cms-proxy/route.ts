@@ -291,7 +291,7 @@ async function handleOpenListProxy(request: NextRequest) {
           },
         });
         const content = await contentResponse.text();
-        metaInfo = JSON.parse(content);
+        metaInfo = JSON.parse(content) as MetaInfo;
         setCachedMetaInfo(rootPath, metaInfo);
       }
     } catch (error) {

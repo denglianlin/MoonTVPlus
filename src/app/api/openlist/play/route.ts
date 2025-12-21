@@ -39,7 +39,12 @@ export async function GET(request: NextRequest) {
     const folderPath = `${rootPath}${rootPath.endsWith('/') ? '' : '/'}${folderName}`;
     const filePath = `${folderPath}/${fileName}`;
 
-    const client = new OpenListClient(openListConfig.URL, openListConfig.Token);
+    const client = new OpenListClient(
+      openListConfig.URL,
+      openListConfig.Token,
+      openListConfig.Username,
+      openListConfig.Password
+    );
 
     // 获取文件的播放链接
     const fileResponse = await client.getFile(filePath);

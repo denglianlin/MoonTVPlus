@@ -41,7 +41,12 @@ export async function GET(request: NextRequest) {
 
     const rootPath = openListConfig.RootPath || '/';
     const folderPath = `${rootPath}${rootPath.endsWith('/') ? '' : '/'}${folderName}`;
-    const client = new OpenListClient(openListConfig.URL, openListConfig.Token);
+    const client = new OpenListClient(
+      openListConfig.URL,
+      openListConfig.Token,
+      openListConfig.Username,
+      openListConfig.Password
+    );
 
     // 1. 尝试读取缓存的 videoinfo.json
     let videoInfo: VideoInfo | null = getCachedVideoInfo(folderPath);

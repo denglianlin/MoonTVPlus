@@ -12,13 +12,20 @@ import {
   MetaInfo,
   setCachedMetaInfo,
 } from '@/lib/openlist-cache';
+import {
+  cleanupOldTasks,
+  completeScanTask,
+  createScanTask,
+  failScanTask,
+  updateScanTaskProgress,
+} from '@/lib/scan-task';
 import { searchTMDB } from '@/lib/tmdb.search';
 
 export const runtime = 'nodejs';
 
 /**
  * POST /api/openlist/refresh
- * 刷新私人影库元数据
+ * 刷新私人影库元数据（后台任务模式）
  */
 export async function POST(request: NextRequest) {
   try {
@@ -49,15 +56,67 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const rootPath = openListConfig.RootPath || '/';
-    const client = new OpenListClient(openListConfig.URL, openListConfig.Token);
+    // 清理旧任务
+    cleanupOldTasks();
 
-    console.log('[OpenList Refresh] 开始刷新:', {
-      rootPath,
-      url: openListConfig.URL,
-      hasToken: !!openListConfig.Token,
+    // 创建后台任务
+    const taskId = createScanTask();
+
+    // 启动后台扫描
+    performScan(
+      taskId,
+      openListConfig.URL,
+      openListConfig.Token,
+      openListConfig.RootPath || '/',
+      tmdbApiKey,
+      tmdbProxy,
+      openListConfig.Username,
+      openListConfig.Password
+    ).catch((error) => {
+      console.error('[OpenList Refresh] 后台扫描失败:', error);
+      failScanTask(taskId, (error as Error).message);
     });
 
+    return NextResponse.json({
+      success: true,
+      taskId,
+      message: '扫描任务已启动',
+    });
+  } catch (error) {
+    console.error('启动刷新任务失败:', error);
+    return NextResponse.json(
+      { error: '启动失败', details: (error as Error).message },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * 执行扫描任务
+ */
+async function performScan(
+  taskId: string,
+  url: string,
+  token: string,
+  rootPath: string,
+  tmdbApiKey: string,
+  tmdbProxy?: string,
+  username?: string,
+  password?: string
+): Promise<void> {
+  const client = new OpenListClient(url, token, username, password);
+
+  console.log('[OpenList Refresh] 开始扫描:', {
+    taskId,
+    rootPath,
+    url,
+    hasToken: !!token,
+  });
+
+  // 立即更新进度，确保任务可被查询
+  updateScanTaskProgress(taskId, 0, 0);
+
+  try {
     // 1. 读取现有 metainfo.json (如果存在)
     let existingMetaInfo: MetaInfo | null = getCachedMetaInfo(rootPath);
 
@@ -132,10 +191,7 @@ export async function POST(request: NextRequest) {
     const listResponse = await client.listDirectory(rootPath);
 
     if (listResponse.code !== 200) {
-      return NextResponse.json(
-        { error: 'OpenList 列表获取失败' },
-        { status: 500 }
-      );
+      throw new Error('OpenList 列表获取失败');
     }
 
     const folders = listResponse.data.content.filter((item) => item.is_dir);
@@ -145,12 +201,19 @@ export async function POST(request: NextRequest) {
       names: folders.map(f => f.name),
     });
 
+    // 更新任务进度
+    updateScanTaskProgress(taskId, 0, folders.length);
+
     // 3. 遍历文件夹，搜索 TMDB
     let newCount = 0;
     let errorCount = 0;
 
-    for (const folder of folders) {
+    for (let i = 0; i < folders.length; i++) {
+      const folder = folders[i];
       console.log('[OpenList Refresh] 处理文件夹:', folder.name);
+
+      // 更新进度
+      updateScanTaskProgress(taskId, i + 1, folders.length, folder.name);
 
       // 跳过已搜索过的文件夹
       if (metaInfo.folders[folder.name]) {
@@ -185,6 +248,7 @@ export async function POST(request: NextRequest) {
             vote_average: result.vote_average,
             media_type: result.media_type,
             last_updated: Date.now(),
+            failed: false,
           };
 
           console.log('[OpenList Refresh] 添加成功:', {
@@ -195,6 +259,18 @@ export async function POST(request: NextRequest) {
           newCount++;
         } else {
           console.warn(`[OpenList Refresh] TMDB 搜索失败: ${folder.name}`);
+          // 记录失败的文件夹
+          metaInfo.folders[folder.name] = {
+            tmdb_id: 0,
+            title: folder.name,
+            poster_path: null,
+            release_date: '',
+            overview: '',
+            vote_average: 0,
+            media_type: 'movie',
+            last_updated: Date.now(),
+            failed: true,
+          };
           errorCount++;
         }
 
@@ -202,6 +278,18 @@ export async function POST(request: NextRequest) {
         await new Promise((resolve) => setTimeout(resolve, 300));
       } catch (error) {
         console.error(`[OpenList Refresh] 处理文件夹失败: ${folder.name}`, error);
+        // 记录失败的文件夹
+        metaInfo.folders[folder.name] = {
+          tmdb_id: 0,
+          title: folder.name,
+          poster_path: null,
+          release_date: '',
+          overview: '',
+          vote_average: 0,
+          media_type: 'movie',
+          last_updated: Date.now(),
+          failed: true,
+        };
         errorCount++;
       }
     }
@@ -258,23 +346,29 @@ export async function POST(request: NextRequest) {
     console.log('[OpenList Refresh] 缓存已更新');
 
     // 6. 更新配置
+    const config = await getConfig();
     config.OpenListConfig!.LastRefreshTime = Date.now();
     config.OpenListConfig!.ResourceCount = Object.keys(metaInfo.folders).length;
     await db.saveAdminConfig(config);
 
-    return NextResponse.json({
-      success: true,
+    // 完成任务
+    completeScanTask(taskId, {
       total: folders.length,
       new: newCount,
       existing: Object.keys(metaInfo.folders).length - newCount,
       errors: errorCount,
-      last_refresh: metaInfo.last_refresh,
+    });
+
+    console.log('[OpenList Refresh] 扫描完成:', {
+      taskId,
+      total: folders.length,
+      new: newCount,
+      existing: Object.keys(metaInfo.folders).length - newCount,
+      errors: errorCount,
     });
   } catch (error) {
-    console.error('刷新私人影库失败:', error);
-    return NextResponse.json(
-      { error: '刷新失败', details: (error as Error).message },
-      { status: 500 }
-    );
+    console.error('[OpenList Refresh] 扫描失败:', error);
+    failScanTask(taskId, (error as Error).message);
+    throw error;
   }
 }
